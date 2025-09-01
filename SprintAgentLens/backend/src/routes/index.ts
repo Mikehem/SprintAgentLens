@@ -25,11 +25,17 @@ export async function registerRoutes(server: FastifyInstance): Promise<void> {
         prefix: '/v1/enterprise/auth',
       });
 
+      // Projects routes - PHASE 2 IMPLEMENTED ✅
+      await server.register(import('@/controllers/projects'), {
+        prefix: '/v1/private/projects',
+      });
+
+      // Workspaces routes - PHASE 2 IMPLEMENTED ✅
+      await server.register(import('@/controllers/workspaces'), {
+        prefix: '/v1/private/workspaces',
+      });
+
       // Future routes will be added here as features are implemented
-      // Projects routes
-      // await server.register(import('@/controllers/projects'), {
-      //   prefix: '/v1/private/projects',
-      // });
 
       // Experiments routes
       // await server.register(import('@/controllers/experiments'), {
