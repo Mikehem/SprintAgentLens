@@ -52,6 +52,8 @@ model User {
   updatedDatasets Dataset[] @relation("DatasetUpdater")
   createdDatasetItems DatasetItem[] @relation("DatasetItemCreator")
   updatedDatasetItems DatasetItem[] @relation("DatasetItemUpdater")
+  createdExperiments Experiment[] @relation("ExperimentCreator")
+  updatedExperiments Experiment[] @relation("ExperimentUpdater")
   
   @@map("users")
   @@index([username])
@@ -263,46 +265,70 @@ model DatasetItem {
 // EXPERIMENT MANAGEMENT
 // ============================================================================
 
-/// AI experiments for model evaluation
+/// AI experiments for model evaluation with workspace isolation
 model Experiment {
   id          String   @id @default(cuid())
   name        String   @db.VarChar(100)
   description String?  @db.Text
   
-  // Associations
+  // Project and workspace association for access control
   projectId   String   @map("project_id")
+  workspaceId String   @map("workspace_id") @db.VarChar(50)
   datasetId   String?  @map("dataset_id")
   
-  // Experiment metadata
-  status      ExperimentStatus @default(RUNNING)
-  config      Json?
+  // Experiment configuration and metadata
+  configuration Json?  // Stores ExperimentConfiguration as JSON
+  metadata      Json?  // Stores ExperimentMetadata as JSON
+  tags          Json?  // Array of string tags
+  status        ExperimentStatus @default(DRAFT)
+  progress      Json?  // Stores ExperimentProgress as JSON
+  results       Json?  // Stores ExperimentResults as JSON
   
-  // Metrics
-  itemCount   Int      @default(0) @map("item_count")
+  // Metrics and statistics
+  itemCount        Int      @default(0) @map("item_count")
+  processedItems   Int      @default(0) @map("processed_items")
+  successfulItems  Int      @default(0) @map("successful_items")
+  failedItems      Int      @default(0) @map("failed_items")
+  averageLatency   Float?   @map("average_latency")
+  totalCost        Float?   @map("total_cost")
+  
+  // Execution timestamps
+  startedAt    DateTime? @map("started_at")
+  completedAt  DateTime? @map("completed_at")
   
   // Audit fields
-  createdAt   DateTime @default(now()) @map("created_at")
-  createdBy   String   @map("created_by") @db.VarChar(50)
+  createdAt     DateTime @default(now()) @map("created_at")
+  createdBy     String   @map("created_by") @db.VarChar(50)
   lastUpdatedAt DateTime @updatedAt @map("last_updated_at")
   lastUpdatedBy String?  @map("last_updated_by") @db.VarChar(50)
   
-  // Relationships
+  // Relationships with access control
   project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   dataset     Dataset? @relation(fields: [datasetId], references: [id], onDelete: SetNull)
+  creator     User     @relation("ExperimentCreator", fields: [createdBy], references: [id])
+  updater     User?    @relation("ExperimentUpdater", fields: [lastUpdatedBy], references: [id])
   
   @@map("experiments")
   @@index([projectId])
+  @@index([workspaceId]) // Critical for workspace isolation
   @@index([datasetId])
   @@index([createdBy])
   @@index([status])
+  @@index([startedAt])
+  @@index([completedAt])
 }
 
 /// Experiment status tracking
 enum ExperimentStatus {
+  DRAFT
+  QUEUED
   RUNNING
+  PAUSED
   COMPLETED
   FAILED
   CANCELLED
+  TIMEOUT
+  ARCHIVED
   
   @@map("experiment_status")
 }
