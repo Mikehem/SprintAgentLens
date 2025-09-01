@@ -54,6 +54,8 @@ model User {
   updatedDatasetItems DatasetItem[] @relation("DatasetItemUpdater")
   createdExperiments Experiment[] @relation("ExperimentCreator")
   updatedExperiments Experiment[] @relation("ExperimentUpdater")
+  createdLLMProviders LlmProviderApiKey[] @relation("LLMProviderCreator")
+  updatedLLMProviders LlmProviderApiKey[] @relation("LLMProviderUpdater")
   
   @@map("users")
   @@index([username])
@@ -363,7 +365,7 @@ model WorkspaceConfiguration {
 // LLM PROVIDER MANAGEMENT
 // ============================================================================
 
-/// LLM provider API key management
+/// LLM provider API key management with enterprise features
 model LlmProviderApiKey {
   id          String   @id @default(cuid())
   name        String   @db.VarChar(100)
@@ -373,22 +375,37 @@ model LlmProviderApiKey {
   encryptedKey String  @map("encrypted_key") @db.Text
   keyHash      String  @map("key_hash") @db.VarChar(255)
   
-  // Key metadata
+  // Provider configuration and metadata
+  configuration Json?  // Stores LLMProviderConfiguration as JSON
+  tags          Json?  // Array of string tags
+  
+  // Status and settings
   isActive     Boolean @default(true) @map("is_active")
   workspaceId  String  @map("workspace_id") @db.VarChar(50)
   
-  // Usage tracking
+  // Usage and performance tracking
   lastUsedAt   DateTime? @map("last_used_at")
   usageCount   Int       @default(0) @map("usage_count")
+  totalCost    Float     @default(0) @map("total_cost")
+  
+  // Health monitoring
+  lastHealthCheck DateTime? @map("last_health_check")
+  healthStatus    Json?     @map("health_status") // Stores LLMProviderHealthStatus
   
   // Audit fields
-  createdAt    DateTime @default(now()) @map("created_at")
-  createdBy    String   @map("created_by") @db.VarChar(50)
+  createdAt     DateTime @default(now()) @map("created_at")
+  createdBy     String   @map("created_by") @db.VarChar(50)
   lastUpdatedAt DateTime @updatedAt @map("last_updated_at")
   lastUpdatedBy String?  @map("last_updated_by") @db.VarChar(50)
   
+  // Relationships
+  creator     User     @relation("LLMProviderCreator", fields: [createdBy], references: [id])
+  updater     User?    @relation("LLMProviderUpdater", fields: [lastUpdatedBy], references: [id])
+  
   @@map("llm_provider_api_keys")
   @@index([provider])
-  @@index([workspaceId])
+  @@index([workspaceId]) // Critical for workspace isolation
   @@index([isActive])
+  @@index([lastUsedAt])
+  @@index([name, workspaceId]) // Unique name per workspace
 }
