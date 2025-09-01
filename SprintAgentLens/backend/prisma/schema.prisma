@@ -48,6 +48,10 @@ model User {
   sessions    UserSession[]
   auditLogs   UserAuditLog[]
   createdProjects Project[] @relation("ProjectCreator")
+  createdDatasets Dataset[] @relation("DatasetCreator")
+  updatedDatasets Dataset[] @relation("DatasetUpdater")
+  createdDatasetItems DatasetItem[] @relation("DatasetItemCreator")
+  updatedDatasetItems DatasetItem[] @relation("DatasetItemUpdater")
   
   @@map("users")
   @@index([username])
@@ -173,16 +177,22 @@ model Project {
 // DATASET MANAGEMENT  
 // ============================================================================
 
-/// Datasets for AI model evaluation
+/// Datasets for AI model evaluation with workspace isolation
 model Dataset {
   id          String   @id @default(cuid())
   name        String   @db.VarChar(100)
   description String?  @db.Text
   
-  // Project association
+  // Project and workspace association for access control
   projectId   String   @map("project_id")
+  workspaceId String   @map("workspace_id") @db.VarChar(50)
   
-  // Dataset metadata
+  // Dataset metadata and configuration
+  metadata    Json?    // Stores DatasetMetadata as JSON
+  tags        Json?    // Array of string tags
+  status      DatasetStatus @default(DRAFT)
+  
+  // Statistics
   itemCount   Int      @default(0) @map("item_count")
   version     Int      @default(1)
   
@@ -192,14 +202,61 @@ model Dataset {
   lastUpdatedAt DateTime @updatedAt @map("last_updated_at")
   lastUpdatedBy String?  @map("last_updated_by") @db.VarChar(50)
   
-  // Relationships
+  // Relationships with access control
   project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  creator     User     @relation("DatasetCreator", fields: [createdBy], references: [id])
+  updater     User?    @relation("DatasetUpdater", fields: [lastUpdatedBy], references: [id])
+  items       DatasetItem[]
   experiments Experiment[]
   
   @@map("datasets")
   @@index([projectId])
+  @@index([workspaceId]) // Critical for workspace isolation
   @@index([createdBy])
   @@index([name])
+  @@index([status])
+}
+
+/// Dataset status for lifecycle management
+enum DatasetStatus {
+  DRAFT
+  READY
+  PROCESSING
+  ERROR
+  ARCHIVED
+  DEPRECATED
+  
+  @@map("dataset_status")
+}
+
+/// Dataset items for storing individual data points
+model DatasetItem {
+  id          String   @id @default(cuid())
+  
+  // Dataset association
+  datasetId   String   @map("dataset_id")
+  
+  // Item data
+  input       Json     // Input data for the item
+  expectedOutput Json? @map("expected_output") // Expected output (ground truth)
+  metadata    Json?    // DatasetItemMetadata as JSON
+  tags        Json?    // Array of string tags
+  
+  // Audit fields
+  createdAt   DateTime @default(now()) @map("created_at")
+  createdBy   String   @map("created_by") @db.VarChar(50)
+  lastUpdatedAt DateTime @updatedAt @map("last_updated_at")
+  lastUpdatedBy String?  @map("last_updated_by") @db.VarChar(50)
+  
+  // Relationships
+  dataset     Dataset  @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  creator     User     @relation("DatasetItemCreator", fields: [createdBy], references: [id])
+  updater     User?    @relation("DatasetItemUpdater", fields: [lastUpdatedBy], references: [id])
+  
+  @@map("dataset_items")
+  @@index([datasetId])
+  @@index([createdBy])
+  @@index([createdAt])
 }
 
 // ============================================================================
