@@ -1,0 +1,311 @@
+// SprintAgentLens Prisma Schema
+// Database schema for enterprise AI observability platform
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// AUTHENTICATION & USER MANAGEMENT
+// ============================================================================
+
+/// User accounts with enterprise authentication features
+model User {
+  id        String   @id @default(cuid())
+  username  String   @unique @db.VarChar(50)
+  email     String   @unique @db.VarChar(255)
+  fullName  String?  @map("full_name") @db.VarChar(100)
+  
+  // Authentication fields
+  passwordHash String  @map("password_hash") @db.VarChar(255)
+  salt         String  @db.VarChar(255)
+  
+  // Account status
+  isActive     Boolean @default(true) @map("is_active")
+  role         UserRole @default(USER)
+  
+  // Security tracking
+  failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
+  accountLockedUntil  DateTime? @map("account_locked_until")
+  lastLoginAt         DateTime? @map("last_login_at")
+  
+  // Workspace association
+  workspaceId String @default("default") @map("workspace_id") @db.VarChar(50)
+  
+  // Audit fields
+  createdAt     DateTime @default(now()) @map("created_at")
+  createdBy     String?  @map("created_by") @db.VarChar(50)
+  lastUpdatedAt DateTime @updatedAt @map("last_updated_at")
+  lastUpdatedBy String?  @map("last_updated_by") @db.VarChar(50)
+  
+  // Relationships
+  sessions    UserSession[]
+  auditLogs   UserAuditLog[]
+  createdProjects Project[] @relation("ProjectCreator")
+  
+  @@map("users")
+  @@index([username])
+  @@index([email])
+  @@index([workspaceId])
+  @@index([isActive])
+}
+
+/// User roles for role-based access control
+enum UserRole {
+  ADMIN
+  USER
+  VIEWER
+  
+  @@map("user_role")
+}
+
+/// Active user sessions with JWT token management
+model UserSession {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  
+  // Session details
+  sessionToken String   @unique @map("session_token") @db.VarChar(500)
+  refreshToken String?  @map("refresh_token") @db.VarChar(500)
+  
+  // Session metadata
+  ipAddress   String?  @map("ip_address") @db.VarChar(45)
+  userAgent   String?  @map("user_agent") @db.Text
+  
+  // Timestamps
+  createdAt   DateTime @default(now()) @map("created_at")
+  expiresAt   DateTime @map("expires_at")
+  lastUsedAt  DateTime @default(now()) @map("last_used_at")
+  
+  // Relationships
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("user_sessions")
+  @@index([userId])
+  @@index([sessionToken])
+  @@index([expiresAt])
+}
+
+/// Security audit log for authentication events
+model UserAuditLog {
+  id       String   @id @default(cuid())
+  userId   String?  @map("user_id")
+  
+  // Event details
+  event       String   @db.VarChar(100)
+  eventType   AuditEventType @map("event_type")
+  description String?  @db.Text
+  
+  // Request metadata
+  ipAddress   String?  @map("ip_address") @db.VarChar(45)
+  userAgent   String?  @map("user_agent") @db.Text
+  requestId   String?  @map("request_id") @db.VarChar(100)
+  
+  // Additional context
+  metadata    Json?
+  
+  // Timestamps
+  createdAt   DateTime @default(now()) @map("created_at")
+  
+  // Relationships
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  @@map("user_audit_log")
+  @@index([userId])
+  @@index([event])
+  @@index([eventType])
+  @@index([createdAt])
+}
+
+/// Audit event types for security monitoring
+enum AuditEventType {
+  LOGIN
+  LOGOUT
+  LOGIN_FAILED
+  ACCOUNT_LOCKED
+  ACCOUNT_UNLOCKED
+  PASSWORD_CHANGED
+  USER_CREATED
+  USER_UPDATED
+  USER_DELETED
+  PERMISSION_DENIED
+  
+  @@map("audit_event_type")
+}
+
+// ============================================================================
+// PROJECT MANAGEMENT
+// ============================================================================
+
+/// Projects for organizing AI experiments and datasets
+model Project {
+  id          String   @id @default(cuid())
+  name        String   @db.VarChar(100)
+  description String?  @db.Text
+  
+  // Workspace association
+  workspaceId String @map("workspace_id") @db.VarChar(50)
+  
+  // Audit fields
+  createdAt   DateTime @default(now()) @map("created_at")
+  createdBy   String   @map("created_by") @db.VarChar(50)
+  lastUpdatedAt DateTime @updatedAt @map("last_updated_at")
+  lastUpdatedBy String?  @map("last_updated_by") @db.VarChar(50)
+  
+  // Relationships
+  creator     User     @relation("ProjectCreator", fields: [createdBy], references: [id])
+  datasets    Dataset[]
+  experiments Experiment[]
+  
+  @@map("projects")
+  @@index([workspaceId])
+  @@index([createdBy])
+  @@index([name])
+}
+
+// ============================================================================
+// DATASET MANAGEMENT  
+// ============================================================================
+
+/// Datasets for AI model evaluation
+model Dataset {
+  id          String   @id @default(cuid())
+  name        String   @db.VarChar(100)
+  description String?  @db.Text
+  
+  // Project association
+  projectId   String   @map("project_id")
+  
+  // Dataset metadata
+  itemCount   Int      @default(0) @map("item_count")
+  version     Int      @default(1)
+  
+  // Audit fields
+  createdAt   DateTime @default(now()) @map("created_at")
+  createdBy   String   @map("created_by") @db.VarChar(50)
+  lastUpdatedAt DateTime @updatedAt @map("last_updated_at")
+  lastUpdatedBy String?  @map("last_updated_by") @db.VarChar(50)
+  
+  // Relationships
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  experiments Experiment[]
+  
+  @@map("datasets")
+  @@index([projectId])
+  @@index([createdBy])
+  @@index([name])
+}
+
+// ============================================================================
+// EXPERIMENT MANAGEMENT
+// ============================================================================
+
+/// AI experiments for model evaluation
+model Experiment {
+  id          String   @id @default(cuid())
+  name        String   @db.VarChar(100)
+  description String?  @db.Text
+  
+  // Associations
+  projectId   String   @map("project_id")
+  datasetId   String?  @map("dataset_id")
+  
+  // Experiment metadata
+  status      ExperimentStatus @default(RUNNING)
+  config      Json?
+  
+  // Metrics
+  itemCount   Int      @default(0) @map("item_count")
+  
+  // Audit fields
+  createdAt   DateTime @default(now()) @map("created_at")
+  createdBy   String   @map("created_by") @db.VarChar(50)
+  lastUpdatedAt DateTime @updatedAt @map("last_updated_at")
+  lastUpdatedBy String?  @map("last_updated_by") @db.VarChar(50)
+  
+  // Relationships
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  dataset     Dataset? @relation(fields: [datasetId], references: [id], onDelete: SetNull)
+  
+  @@map("experiments")
+  @@index([projectId])
+  @@index([datasetId])
+  @@index([createdBy])
+  @@index([status])
+}
+
+/// Experiment status tracking
+enum ExperimentStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+  
+  @@map("experiment_status")
+}
+
+// ============================================================================
+// WORKSPACE CONFIGURATIONS
+// ============================================================================
+
+/// Workspace configuration settings
+model WorkspaceConfiguration {
+  id          String   @id @default(cuid())
+  workspaceId String   @unique @map("workspace_id") @db.VarChar(50)
+  
+  // Configuration data
+  name        String   @db.VarChar(100)
+  description String?  @db.Text
+  settings    Json?
+  
+  // Feature toggles
+  features    Json?
+  
+  // Audit fields
+  createdAt   DateTime @default(now()) @map("created_at")
+  createdBy   String   @map("created_by") @db.VarChar(50)
+  lastUpdatedAt DateTime @updatedAt @map("last_updated_at")
+  lastUpdatedBy String?  @map("last_updated_by") @db.VarChar(50)
+  
+  @@map("workspace_configurations")
+}
+
+// ============================================================================
+// LLM PROVIDER MANAGEMENT
+// ============================================================================
+
+/// LLM provider API key management
+model LlmProviderApiKey {
+  id          String   @id @default(cuid())
+  name        String   @db.VarChar(100)
+  provider    String   @db.VarChar(50) // openai, anthropic, google, etc.
+  
+  // Encrypted API key storage
+  encryptedKey String  @map("encrypted_key") @db.Text
+  keyHash      String  @map("key_hash") @db.VarChar(255)
+  
+  // Key metadata
+  isActive     Boolean @default(true) @map("is_active")
+  workspaceId  String  @map("workspace_id") @db.VarChar(50)
+  
+  // Usage tracking
+  lastUsedAt   DateTime? @map("last_used_at")
+  usageCount   Int       @default(0) @map("usage_count")
+  
+  // Audit fields
+  createdAt    DateTime @default(now()) @map("created_at")
+  createdBy    String   @map("created_by") @db.VarChar(50)
+  lastUpdatedAt DateTime @updatedAt @map("last_updated_at")
+  lastUpdatedBy String?  @map("last_updated_by") @db.VarChar(50)
+  
+  @@map("llm_provider_api_keys")
+  @@index([provider])
+  @@index([workspaceId])
+  @@index([isActive])
+}
